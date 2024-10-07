@@ -4,11 +4,9 @@ import re
 
 OCR_CITING_DOI = re.compile("'citing': '([^']*)'")
 def opencitations_request_to_citing_dois(request_json:str):
-  return list(
-    map(
-      lambda match : match.group(1), 
-      OCR_CITING_DOI.finditer(request_json)
-    )
+  return map(
+    lambda match : match.group(1), 
+    OCR_CITING_DOI.finditer(request_json)
   )
 
 parser = optparse.OptionParser()
@@ -31,4 +29,7 @@ doi = args[0]
 citations_uri = f"https://opencitations.net/index/coci/api/v1/citations/{doi}"
 
 request = requests.get(citations_uri)
-print(opencitations_request_to_citing_dois(str(request.json())))
+citing_dois = opencitations_request_to_citing_dois(str(request.json()))
+for d in citing_dois:
+  d_req = requests.get(f'https://dx.doi.org/{d}', headers={'Accept':'text/bibliography'}, params={'style':'bibtex'})
+  print(d_req.text)
