@@ -61,6 +61,7 @@ doi = args[0]
 
 citing_dois = CITATION_INDEX_CHOICES[options.citation_index](doi)
 
+#ideally finder processes the dois into metadata as well, but since that could require a different citation index, the job was shifted off to getter
 with open(options.output, "w", encoding="utf-16") as out:
   for d in citing_dois:
     out.write(f"{d}\n")
