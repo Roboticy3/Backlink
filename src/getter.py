@@ -136,24 +136,18 @@ def construct_scopus_abstract(doi, refresh, view='META') -> Optional[AbstractRet
 
 
 def flatten_scopus_abstract(abstract:AbstractRetrieval, columns:dict) -> str:
+  #convert the abstract into the same format as COLUMNS_BLUEPRINT
+  
+  #pack the abstract into a dictionary such that the keys line up with COLUMNS_BLUEPRINT
   d = scopus_abstract_to_top_columns(abstract)
 
   for k in list(d.keys()): #safe iteration since d is going to be modified
+    #for each major column,
     v = columns.get(k)
+    #if the column was removed when it was passed here, delete it
     if v == None: 
       d.pop(k)
       continue
-
-    v_d = d[k]
-    if v_d is Iterator[str]:
-      d[k] = list(v_d)
-    else:
-      d[k] = [str(v_d)]
-
-    if v[0] == None:
-      continue
-    
-    d[k] = list(itertools.repeat(v_d, int(v[0])))
 
   return d
 
