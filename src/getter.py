@@ -14,7 +14,6 @@ parser.add_option("-s", "--silent", action="store_true", help="silence print mes
 
 #map from readable key names to the names required to collect them from different indexes
 REQUEST_FIELDS_TO_COLUMN_NAMES = {
-  #ChatGPT's true purpose!
   "affiliation": ["affiliation"],  # Correct AbstractRetrieval field for affiliations
   "aggregation type": ["aggregationType"],  # Type of document (journal, book, etc.)
   "author keywords": ["authkeywords"],  # Author-specified keywords
@@ -35,7 +34,7 @@ REQUEST_FIELDS_TO_COLUMN_NAMES = {
   "references": ["references"], # References list
 }
 
-def scopus_abstract_to_top_columns(abstract:AbstractRetrieval):
+def scopus_abstract_to_top_columns(abstract:AbstractRetrieval) -> dict[str, Any]:
   return {key: getattr(abstract, field[0], None) for key, field in REQUEST_FIELDS_TO_COLUMN_NAMES.items()}
 
 # The top 2 rows of the output csv with all the metadata of each article,
@@ -135,6 +134,9 @@ def construct_scopus_abstract(doi, refresh, view='META') -> Optional[AbstractRet
     return None #pybibliometrics has a dogwater error system that makes it not possible to catch and recover from errors gracefully. Oh well!
 
 
+#convert abstract into a set of fields in the same format as COLUMNS_BLUEPRINT, then format into comma-separated values of columns dependent on the columns argument
+#type converstions from AbstractRetrieval fields:
+ABSTRACTRETRIEVALFIELDT = [list[NamedTuple], str, int, Tuple[Tuple[int, int], Tuple[int, int]], Tuple[int, int, int], Tuple[str, ...]]
 def flatten_scopus_abstract(abstract:AbstractRetrieval, columns:dict) -> str:
   #convert the abstract into the same format as COLUMNS_BLUEPRINT
   
@@ -143,11 +145,20 @@ def flatten_scopus_abstract(abstract:AbstractRetrieval, columns:dict) -> str:
 
   for k in list(d.keys()): #safe iteration since d is going to be modified
     #for each major column,
-    v = columns.get(k)
+    col = columns.get(k)
     #if the column was removed when it was passed here, delete it
-    if v == None: 
+    if col == None: 
       d.pop(k)
       continue
+  
+  # List[NamedTuple] should be joined into a single list of strings
+  # str should be turned into a list with a single element
+  # int to string
+  # Tuple[Tuple[int, int], Tuple[int, int]] represents a date range, should be unraveled into two date strings yyyy/mm/dd
+  # Tuple[int, int, int] should be turned into a list of strings
+  # Tuple[str, ...] should be turned into a list of strings
+  # Lists and lists of tuples with numbers in the columns argument should be resized to match the target length, thus normalizing the number of columns in the string
+  
 
   return d
 
