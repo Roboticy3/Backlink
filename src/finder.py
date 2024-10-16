@@ -1,8 +1,6 @@
-import itertools
 import optparse
-import os
-import sys
-from typing import Any, Callable
+import os, sys, itertools, io
+import typing
 import requests
 import re
 
@@ -14,12 +12,15 @@ parser.add_option("-s", "--silent", action="store_true", help="silence print mes
 
 #function to 
 OC_REQUEST_CITING_DOI_REGEX = re.compile("'citing': '([^']*)'")
-def opencitations_request_to_citing_dois(request:requests.Response, catch:Callable[[int], Any]):
-  
+def opencitations_request_to_citing_dois(request:requests.Response, catch:typing.Callable[[int], typing.Any], log:io.TextIOWrapper | None = None):
+
   if catch(request.status_code): return map()
 
   try:
     request_string = str(request.json())
+    if log: 
+      print("Writing to citing log...")
+      log.write(f'{request_string}')
   except:
     request_string = ""
   return map(
@@ -32,24 +33,21 @@ def opencitations_request_to_citing_dois(request:requests.Response, catch:Callab
 #maps to the function that will run when requesting a doi through that index
 CITATION_INDEX_CHOICES = {
   "opencitations":(
-    lambda doi, catch: 
+    lambda doi, catch, log = None: 
       opencitations_request_to_citing_dois(
         requests.get(
           f"https://opencitations.net/index/coci/api/v1/citations/{doi}"
-        ), catch
+        ), catch, log
       )
-  )
+  ),
 }
 parser.add_option("-i", "--citing-index", type="choice", 
   choices=list(CITATION_INDEX_CHOICES.keys()),  
   default=list(CITATION_INDEX_CHOICES)[0],
   help=f"pick the database I will use for finding all the citing publications ({"|".join(CITATION_INDEX_CHOICES)})"
 )
-
-#output file can be specified
-parser.add_option("-o", "--output", 
-  default="data/finder.txt",
-  help=f"pick the output file for the program"
+parser.add_option("-l", "--citing-log", default="logs/citing_log.txt",
+  help="the output of the request log for citing dois"
 )
 
 parser.add_option("-k", "--key", default="",
@@ -66,6 +64,9 @@ CITATION_META_INDEX_CHOICES = {
 }
 parser.add_option("-I", "--meta-index", type="choice", choices=list(CITATION_META_INDEX_CHOICES.keys()), default=list(CITATION_META_INDEX_CHOICES)[0], help="select the source that data will be gathered from. "
 "This only changes the url or the api query, the rest of the functionality of the program is based purely of the fields the query returns. See help on -x and -c.")
+parser.add_option("-L", "--meta-log", default="logs/meta_log.txt",
+help="the output of the request logs for citing dois"
+)
 
 parser.add_option("-q", "--query-rows", type="int", default=3, help="")
 parser.add_option("-x", "--exclude", default="coredata", help="querying each doi returns a list of 'fields', named data, '-x coredata|link' will exclude any fields with names containing 'coredata' or 'link' from the output")
@@ -79,7 +80,10 @@ parser.add_option("-c", "--counts", default="", help="querying each doi returns 
 if options.silent: sys.stdout = open(os.devnull, 'w')
 
 def catch_bad_status(status_code:int):
-  if status_code != 200 and options.response_error_handling == "show-content": print("response failed with code", status_code)
+  if status_code != 200 and options.response_error_handling == "show-content": 
+    print("response failed with code", status_code)
+    return True
+  return False
 
 if (len(args) < 1) : 
   print("Not enough arguments!")
@@ -88,9 +92,16 @@ if (len(args) < 1) :
 
 doi = args[0]
 
-citing_dois = CITATION_INDEX_CHOICES[options.citing_index](doi, catch_bad_status)
+citing_dois = []
+try:
+  #if the request for citing dois is being logged, pass a log file to the request handler 
+  with open(options.citing_log, 'w', encoding="utf-16") as f:
+    citing_dois = CITATION_INDEX_CHOICES[options.citing_index](doi, catch_bad_status, f)
+except Exception:
+  print("Citing log", options.citing_log, "failed to open! Continuing with no meta log...")
+  citing_dois = CITATION_INDEX_CHOICES[options.citing_index](doi, catch_bad_status)
 
-def dois_to_jsons(dois, index:str, key:str):
+def dois_to_responses(dois, index:str, key:str):
   params = {}
   match index:
     case "scopus": params = {"apiKey":key, "httpAccept":"application/json", "view":"META"}
@@ -102,14 +113,26 @@ def dois_to_jsons(dois, index:str, key:str):
 stdios = sys.stdin.read().splitlines() if (not sys.stdin.isatty()) else []
 citing_dois = itertools.chain(stdios, citing_dois)
 
-i = 0
-print("Scanning citing publications found on",options.citing_index,"and publication data found on",options.meta_index,"...")
-with open("data/finder.txt", "w", encoding="utf-16") as f:
-  for response in dois_to_jsons(citing_dois, options.meta_index, options.key):
-    catch_bad_status(response.status_code)
-    if response.status_code != 200 and options.response_error_handling != "output-anyways":
-      continue
-    f.write(str(response.json()))
-    f.write("\n")
-    i += 1
-print("Finished scanning ", i, " entries")
+def single_json_to_meta(response:requests.Response):  
+  if catch_bad_status(response.status_code) and options.response_error_handling != "output-anyways":
+    return None
+  return str(response.json())
+
+def dois_to_meta(citing_dois, log):
+  print("Scanning citing publications found on",options.citing_index,"and publication data found on",options.meta_index,"...")
+  responses = dois_to_responses(citing_dois, options.meta_index, options.key)
+  meta:typing.Iterator[str] = []
+  try:
+    with open(log, "w", encoding="utf-16") as f:
+      lmeta = list(filter(lambda json: json != None, map(single_json_to_meta, responses)))
+      print("Writing",len(lmeta),"entries to meta log...")
+      meta = lmeta
+      for m in meta:
+        f.write(f"{m}\n")    
+  except:
+    print("Meta log", log, "failed to open! Continuing with no meta log...")
+    meta = filter(lambda json: json, map(single_json_to_meta, responses))
+  
+  return meta
+
+meta = dois_to_meta(citing_dois, options.meta_log)
