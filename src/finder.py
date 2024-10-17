@@ -14,8 +14,12 @@ parser.add_option("-s", "--silent", action="store_true", help="silence print mes
 OC_REQUEST_CITING_DOI_REGEX = re.compile("'citing': '([^']*)'")
 def opencitations_request_to_citing_dois(request:requests.Response, catch:typing.Callable[[int], typing.Any], log:io.TextIOWrapper | None = None):
 
+  #TODO! read log if it already has contents instead of requesting the internet
+
+  #catch a bad error code
   if catch(request.status_code): return map()
 
+  #find all the dois in the request
   try:
     request_string = str(request.json())
     if log: 
@@ -68,7 +72,23 @@ parser.add_option("-L", "--meta-log", default="logs/meta_log.txt",
 help="the output of the request logs for citing dois"
 )
 
-parser.add_option("-q", "--query-rows", type="int", default=3, help="")
+#TODO! Column schemas:
+### Given a json string, return either column headers or a single row in csv format:
+### Headers will be at "depths" specified by -q. If q is 0-5, the output headers will have 5 rows.
+### The first row will have the properties of the json object, the second the properties of those objects, etc.
+### If some object contains an array, unspool the array into columns, with 5 elements by default
+### If some object contains multiple objects and is on the last row, keep 5 elements by default
+### If these objects have fewer than 5 elements, the columns are added in, and they are truncated if they are over.
+DEFAULT_COLUMN_COUNT = 5
+### The goal is to output csv headers and rows with a predictable number of columns for some arbitrary json.
+### -c will specify counts for certain fields in the form [REGEX:COUNT]. These specifications should be adhered to on the fly, 
+###   truncating or extending the output string based on how the counts regexes treat the current field being looked at.
+### -x will exclude columns, override any behavior specified by -c, and be equivalent to specifying a count of "0" for the same columns.
+### It would probably best to make a supporting program called jsontocsv.py or something similar.
+
+#not sure how to write the help session for this
+parser.add_option("-q", "--query-rows", type="string", default="1-3")
+
 parser.add_option("-x", "--exclude", default="coredata", help="querying each doi returns a list of 'fields', named data, '-x coredata|link' will exclude any fields with names containing 'coredata' or 'link' from the output")
 parser.add_option("-c", "--counts", default="", help="querying each doi returns a list of 'fields', named data. "
 "Some fields contain lists. For spreadsheets to contain these lists, they have to have a predictable length. "
@@ -113,6 +133,7 @@ def dois_to_responses(dois, index:str, key:str):
 stdios = sys.stdin.read().splitlines() if (not sys.stdin.isatty()) else []
 citing_dois = itertools.chain(stdios, citing_dois)
 
+#TODO! convert a json string to comma seperated values based on a column schema.
 def single_json_to_meta(response:requests.Response):  
   if catch_bad_status(response.status_code) and options.response_error_handling != "output-anyways":
     return None
